@@ -7,7 +7,6 @@ volumes:
 services:
   postgres:
     image: postgres:14
-    env_file: ../.env
     volumes:
       - pg_data:/var/lib/postgresql/data
   frontend:
@@ -20,7 +19,7 @@ services:
     image: nunime/foodgram_backend:latest
     container_name: foodgram-backend
     build: ../backend
-    env_file: ../.env
+    env_file: ../.docker.env
     depends_on:
       - postgres
     volumes:

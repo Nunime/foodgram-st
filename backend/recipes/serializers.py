@@ -30,7 +30,7 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
             pk=value['ingredient']['id']
         ).exists():
             raise serializers.ValidationError(
-                f'Ingredient with {value['ingredient']['id']}'
+                f'Ingredient with {value["ingredient"]["id"]}'
                 ' not exists'
             )
 

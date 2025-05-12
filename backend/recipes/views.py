@@ -144,8 +144,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
         for key, value in data.items():
             y -= 15
             line = (
-                f'- {key}: {value['amount']} '
-                f'{value['unit']}'
+                f'- {key}: {value["amount"]} '
+                f'{value["unit"]}'
             )
 
             pdf.drawString(110, y, line)

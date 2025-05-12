@@ -21,6 +21,8 @@
 git clone https://github.com/nunime/foodgram-st.git
 ```
 
+Создайте .docker.env
+
 Перейдите в директорию с инвраструктурой проекта
 ``` bash
 cd /foodgram-st/infra/
