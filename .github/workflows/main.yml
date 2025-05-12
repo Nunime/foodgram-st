@@ -74,4 +74,4 @@ jobs:
       with:
         to: ${{ secrets.TELEGRAM_TO }}
         token: ${{ secrets.TELEGRAM_TOKEN }}
-        message: Образы успешно загружены!
+        message: Образы проекта foodgram успешно загружены!
