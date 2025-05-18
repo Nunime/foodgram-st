@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from django.core.management.utils import get_random_secret_key
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,13 +23,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
+load_dotenv()
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-3d_o9oxshpltb_cwhuo5r^m19kyqd#@w3$d+_z$=)x+_errz34'
+SECRET_KEY = os.getenv('DJANGO_KEY', get_random_secret_key())
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
 
-ALLOWED_HOSTS = ['192.168.0.7', '127.0.0.1', 'localhost']
+ALLOWED_HOSTS = list(os.getenv("ALLOWED_HOSTS", "localhost 127.0.0.1").split())
 
 INTERNAL_IPS = ['127.0.0.1',]
 # Application definition
@@ -88,8 +92,6 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-load_dotenv()
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -123,11 +125,13 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'ru-RU'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Moscow'
 
 USE_I18N = True
+
+USE_L10N = True
 
 USE_TZ = True
 
@@ -159,7 +163,7 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
     ),
     'DEFAULT_PAGINATION_CLASS': 'api.paginators.PageLimitPagination',
-    'PAGE_SIZE': 10,
+    'PAGE_SIZE': 6,
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.UserRateThrottle',
         'rest_framework.throttling.AnonRateThrottle',
@@ -174,11 +178,11 @@ REST_FRAMEWORK = {
 DJOSER = {
     'HIDE_USERS': False,
     'SERIALIZERS': {
-        'user': 'users.serializers.UserSerializer',
-        'current_user': 'users.serializers.UserSerializer',
+        'user': 'api.serializers.UserSerializer',
+        'current_user': 'api.serializers.UserSerializer',
     },
     'PERMISSIONS': {
         'user_list': ('rest_framework.permissions.AllowAny',),
-        'user': ('users.permissions.CurrentUserOrAdminOrReadOnly',),
+        'user': ('api.permissions.CurrentUserOrAdminOrReadOnly',),
     }
 }
