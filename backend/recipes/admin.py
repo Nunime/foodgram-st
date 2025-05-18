@@ -1,8 +1,6 @@
 from django.contrib import admin
-
-from .models import (Recipe, RecipeIngredient, Ingredient,
-                     FavoriteRecipes, ShoppingCart)
 from django.utils.html import format_html, mark_safe
+from .models import Recipe, RecipeIngredient, Ingredient, FavoriteRecipes, ShoppingCart
 
 
 class CookingTimeFilter(admin.SimpleListFilter):
@@ -10,35 +8,44 @@ class CookingTimeFilter(admin.SimpleListFilter):
     parameter_name = 'cooking_time'
 
     def lookups(self, request, model_admin):
-        min_cooking_time = Recipe.objects.order_by('cooking_time').first().cooking_time
-        max_cooking_time = Recipe.objects.order_by('-cooking_time').first().cooking_time
+        min_recipe = Recipe.objects.order_by('cooking_time').first()
+        max_recipe = Recipe.objects.order_by('-cooking_time').first()
+
+        if not min_recipe or not max_recipe:
+            return ()
+
+        min_cooking_time = min_recipe.cooking_time
+        max_cooking_time = max_recipe.cooking_time
         median_cooking_time = (min_cooking_time + max_cooking_time) / 2
 
         return (
             ('fast', f'Быстрые (< {median_cooking_time} мин)'),
-            ('medium', f'Средние ({median_cooking_time}–{max_cooking_time} мин)'),
+            ('medium', f'Средние ({median_cooking_time}-{max_cooking_time} мин)'),
             ('slow', f'Долгие (> {max_cooking_time} мин)'),
         )
 
     def queryset(self, request, queryset):
+        min_cooking_time = self.get_min_cooking_time()
+        max_cooking_time = self.get_max_cooking_time()
+        median_cooking_time = (min_cooking_time + max_cooking_time) / 2
+
         if self.value() == 'fast':
-            return queryset.filter(cooking_time__lt=self.get_median_cooking_time())
+            return queryset.filter(cooking_time__lt=median_cooking_time)
         elif self.value() == 'medium':
             return queryset.filter(
-                cooking_time__gte=self.get_median_cooking_time(),
-                cooking_time__lte=self.get_max_cooking_time()
+                cooking_time__gte=median_cooking_time,
+                cooking_time__lte=max_cooking_time
             )
         elif self.value() == 'slow':
-            return queryset.filter(cooking_time__gt=self.get_max_cooking_time())
-
-    def get_median_cooking_time(self):
-        return (self.get_min_cooking_time() + self.get_max_cooking_time()) / 2
+            return queryset.filter(cooking_time__gt=max_cooking_time)
 
     def get_min_cooking_time(self):
-        return Recipe.objects.order_by('cooking_time').first().cooking_time
+        recipe = Recipe.objects.order_by('cooking_time').first()
+        return recipe.cooking_time if recipe else 0
 
     def get_max_cooking_time(self):
-        return Recipe.objects.order_by('-cooking_time').first().cooking_time
+        recipe = Recipe.objects.order_by('-cooking_time').first()
+        return recipe.cooking_time if recipe else float('inf')
 
 
 @admin.register(Ingredient)
@@ -78,24 +85,26 @@ class RecipeAdmin(admin.ModelAdmin):
 
     @admin.display(description='В избранном')
     def get_favorite_count(self, obj):
-        return obj.favorites.count()
+        return obj.favorited_by.count()
 
     @admin.display(description='Продукты')
     def get_ingredients_list(self, obj):
-        ingredients = obj.recipeingredient_set.all()
+        ingredients = obj.ingredients.prefetch_related('ingredient').all()
         html = '<ul>'
-        for ingredient in ingredients:
-            html += f'<li>{ingredient.ingredient.name} ({ingredient.amount} {ingredient.ingredient.measurement_unit})</li>'
+        for item in ingredients:
+            html += f'<li>{item.ingredient.name} ({item.amount} {item.ingredient.measurement_unit})</li>'
         html += '</ul>'
         return mark_safe(html)
 
     @admin.display(description='Картинка')
     def get_image_preview(self, obj):
         if obj.image:
-            return mark_safe(f'<img src="{obj.image.url}" width="50" height="50" />')
+            return format_html('<img src="{}" width="50" height="50">', obj.image.url)
         return '-'
 
 
 @admin.register(FavoriteRecipes, ShoppingCart)
 class FavoriteAndShoppingCartAdmin(admin.ModelAdmin):
-    pass
+    list_display = ('user', 'recipe')
+    search_fields = ('user__username', 'recipe__name')
+    raw_id_fields = ('user', 'recipe')
