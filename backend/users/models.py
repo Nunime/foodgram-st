@@ -1,7 +1,7 @@
 from django.db import models
 from django.db.models import Q, F
 from django.core.validators import RegexValidator
-from django.contrib.auth.models import AbstractUser, UserManager
+from django.contrib.auth.models import AbstractUser
 
 from . import constants
 
