@@ -6,14 +6,12 @@ from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import (IsAuthenticated,
                                         IsAuthenticatedOrReadOnly)
-from django.http import HttpResponse
-from django.shortcuts import redirect
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.pagesizes import A4
-from io import BytesIO
+from django.http import FileResponse
+from django.shortcuts import redirect, get_object_or_404
 from django.db.models import Sum
+from rest_framework import serializers
+from django.urls import reverse
+from io import StringIO
 
 from recipes.models import (Ingredient, Recipe, RecipeIngredient,
                             ShoppingCart, FavoriteRecipes)
@@ -30,7 +28,6 @@ User = get_user_model()
 
 class CustomUserViewSet(UserViewSet):
     @action(
-        methods=['get', 'put', 'patch', 'delete'],
         detail=False,
         permission_classes=(IsAuthenticated,)
     )
@@ -84,20 +81,21 @@ class CustomUserViewSet(UserViewSet):
         sub_user = self.get_object()
 
         if user == sub_user:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-
-        user_in_subscriptions = user.subscriptions.filter(
-            subscribe=sub_user
-        ).exists()
+            raise serializers.ValidationError(
+                'Нельзя подписаться на самого себя'
+            )
 
         if request.method == 'POST':
-            if user_in_subscriptions:
-                return Response(status=status.HTTP_400_BAD_REQUEST)
-
-            Subscriptions.objects.create(
+            subscription, created = Subscriptions.objects.get_or_create(
                 user=user,
                 subscribe=sub_user
             )
+
+            if not created:
+                raise serializers.ValidationError(
+                    'Вы уже подписаны на этого пользователя'
+                )
+
             serializer = SubscriptionsUserSerializer(
                 sub_user, context={'request': request}
             )
@@ -105,13 +103,16 @@ class CustomUserViewSet(UserViewSet):
                 serializer.data,
                 status=status.HTTP_201_CREATED
             )
-        else:
-            if not user_in_subscriptions:
-                return Response(status=status.HTTP_400_BAD_REQUEST)
-            user.subscriptions.filter(
-                subscribe=sub_user
-            ).delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        subscription = user.subscriptions.filter(
+            subscribe=sub_user
+        ).first()
+        if not subscription:
+            raise serializers.ValidationError(
+                'Вы не подписаны на этого пользователя'
+            )
+        subscription.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
@@ -133,29 +134,40 @@ class RecipeViewSet(viewsets.ModelViewSet):
             return RecipeReadSerializer
         return RecipeWriteSerializer
 
-    def create(self, request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action in ['create', 'partial_update']:
+            context['read_serializer'] = RecipeReadSerializer
+        return context
 
-        read_serializer = RecipeReadSerializer(
-            serializer.instance,
-            context={'request': request}
-        )
-        return Response(read_serializer.data, status=status.HTTP_201_CREATED)
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)
 
-    def partial_update(self, request, pk=None):
-        instance = self.get_object()
+    def _handle_m2m_action(self, request, model, error_message):
+        user = request.user
+        recipe = self.get_object()
 
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
+        if request.method == 'POST':
+            obj, created = model.objects.get_or_create(
+                user=user,
+                recipe=recipe
+            )
 
-        read_serializer = RecipeReadSerializer(
-            serializer.instance,
-            context={'request': request}
-        )
-        return Response(read_serializer.data, status=status.HTTP_200_OK)
+            if not created:
+                raise serializers.ValidationError(error_message)
+
+            serializer = ShortRecipesSerializer(recipe)
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED
+            )
+
+        get_object_or_404(
+            model,
+            user=user,
+            recipe=recipe
+        ).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(
         detail=True,
@@ -163,31 +175,11 @@ class RecipeViewSet(viewsets.ModelViewSet):
         permission_classes=(IsAuthenticated,)
     )
     def shopping_cart(self, request, pk=None):
-        user = request.user
-        recipe = self.get_object()
-
-        recipe_in_shopping_cart = user.shopping_cart.filter(
-            recipe=recipe
-        ).exists()
-
-        if request.method == 'POST':
-            if recipe_in_shopping_cart:
-                return Response(status=status.HTTP_400_BAD_REQUEST)
-
-            ShoppingCart.objects.create(
-                user=user,
-                recipe=recipe
-            )
-            serializer = ShortRecipesSerializer(recipe)
-            return Response(
-                serializer.data,
-                status=status.HTTP_201_CREATED
-            )
-        else:
-            if not recipe_in_shopping_cart:
-                return Response(status=status.HTTP_400_BAD_REQUEST)
-            user.shopping_cart.filter(recipe=recipe).delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+        return self._handle_m2m_action(
+            request,
+            ShoppingCart,
+            'Рецепт уже добавлен в список покупок'
+        )
 
     @action(
         detail=False,
@@ -195,14 +187,52 @@ class RecipeViewSet(viewsets.ModelViewSet):
         permission_classes=(IsAuthenticated,)
     )
     def download_shopping_cart(self, request):
-        data = RecipeIngredient.objects.filter(
-            recipe__in=request.user.shopping_cart.values('recipe')
+        from datetime import datetime
+        
+        shopping_cart = request.user.shopping_carts.select_related(
+            'recipe', 'recipe__author'
+        )
+        
+        ingredients = RecipeIngredient.objects.filter(
+            recipe__in=shopping_cart.values('recipe')
         ).values(
             'ingredient__name',
             'ingredient__measurement_unit'
-        ).annotate(total_amount=Sum('amount'))
+        ).annotate(total_amount=Sum('amount')).order_by('ingredient__name')
 
-        return self.create_pdf_file(data)
+        recipes = shopping_cart.values_list(
+            'recipe__name', 'recipe__author__username'
+        )
+
+        current_date = datetime.now().strftime('%d.%m.%Y')
+        
+        shopping_list = '\n'.join([
+            f'Список покупок на {current_date}',
+            f'Пользователь: {request.user.username}',
+            '',
+            'Продукты к покупке:',
+            *[
+                f'{i + 1}. {item["ingredient__name"].capitalize()} - '
+                f'{item["total_amount"]} {item["ingredient__measurement_unit"]}'
+                for i, item in enumerate(ingredients)
+            ],
+            '',
+            'Продукты для рецептов:',
+            *[
+                f'- {name} (автор: {author})'
+                for name, author in recipes
+            ]
+        ])
+
+        buffer = StringIO()
+        buffer.write(shopping_list)
+        buffer.seek(0)
+        
+        return FileResponse(
+            buffer,
+            as_attachment=True,
+            filename='shopping_list.txt'
+        )
 
     @action(
         detail=True,
@@ -210,34 +240,11 @@ class RecipeViewSet(viewsets.ModelViewSet):
         permission_classes=(IsAuthenticated,)
     )
     def favorite(self, request, pk=None):
-        user = request.user
-        recipe = self.get_object()
-
-        recipe_in_favorite = user.favorite_recipes.filter(
-            recipe=recipe
-        ).exists()
-
-        if request.method == 'POST':
-            if recipe_in_favorite:
-                return Response(status=status.HTTP_400_BAD_REQUEST)
-
-            FavoriteRecipes.objects.create(
-                user=user,
-                recipe=recipe
-            )
-            serializer = ShortRecipesSerializer(
-                recipe,
-                context={'request': request}
-            )
-            return Response(
-                serializer.data,
-                status=status.HTTP_201_CREATED
-            )
-        else:
-            if not recipe_in_favorite:
-                return Response(status=status.HTTP_400_BAD_REQUEST)
-            user.favorite_recipes.filter(recipe=recipe).delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+        return self._handle_m2m_action(
+            request,
+            FavoriteRecipes,
+            'Рецепт уже добавлен в избранное'
+        )
 
     @action(
         detail=True,
@@ -246,46 +253,10 @@ class RecipeViewSet(viewsets.ModelViewSet):
     )
     def get_short_link(self, request, pk=None):
         recipe = self.get_object()
-        host_path = request.get_host()
-        full_path = 'http://' + host_path + f'/s/{hex(recipe.id)[2:]}'
+        relative_url = reverse('recipe-redirect', kwargs={'recipe_id': recipe.id})
+        full_path = request.build_absolute_uri(relative_url)
 
         data = {
             'short-link': full_path
         }
         return Response(data)
-
-    def create_pdf_file(self, data):
-        pdfmetrics.registerFont(TTFont('DejaVu', 'DejaVuSans.ttf'))
-        buffer = BytesIO()
-
-        pdf = canvas.Canvas(buffer, pagesize=A4)
-        pdf.setFont('DejaVu', 14)
-
-        y = 800
-        pdf.drawString(100, y, 'Список покупок:')
-
-        for item in data:
-            y -= 15
-            line = (
-                f'- {item["ingredient__name"]}: {item["total_amount"]} '
-                f'{item["ingredient__measurement_unit"]}'
-            )
-
-            pdf.drawString(110, y, line)
-
-        pdf.showPage()
-        pdf.save()
-
-        buffer.seek(0)
-        return HttpResponse(
-            buffer,
-            content_type='application/pdf',
-            headers={
-                'Content-Disposition': (
-                    'attachment; filename="shopping_list.pdf"'
-                )
-            }
-        )
-
-    def redirect_to_recipe(self, s_id=None):
-        return redirect(f'/recipes/{int(s_id, 16)}/')

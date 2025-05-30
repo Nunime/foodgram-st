@@ -19,32 +19,32 @@
 ## Запуск проекта локально (только Backend)
 
 Склонируйте репозиторий себе на компьютер и перейдите в папку backend:
-``` bash
+```bash
 git clone https://github.com/nunime/foodgram-st.git
 cd foodgram-st/backend/
 ```
 Выполните миграции:
-``` BASH
+```bash
 python manage.py migrate
 ```
 Создайте администратора:
-``` BASH
+```bash
 python manage.py createsuperuser
 ```
 ### Загрузите в базу данных собранные зарание данные
 Загрузить список ингредиентов:
-``` BASH
+```bash
 python manage.py load_ingredients
 ```
 ---
 Теперь можно запускать проект:
-``` BASH
+```bash
 python manage.py runserver
 ```
 ## Полный запуск проекта
 
 Склонируйте репозиторий себе на компьютер и перейдите в корневую папку проекта:
-``` bash
+```bash
 git clone https://github.com/nunime/foodgram-st.git
 cd foodgram-st/
 ```
@@ -52,29 +52,31 @@ cd foodgram-st/
 В корневой папке вам нужно создать `.env` файл (в директории лежит `.env.example` файл, для примера)
 
 Перейдите в папку с инфраструктурой и выполните сборку проекта с помощью docker-compose
-``` bash
+```bash
 cd infra/
 sudo docker compose up --build
 ```
 
 Откройте в текущей директории ещё один терминал и выполните в нём следующие команды:
 1) Выполнение миграций
-``` bash
+```bash
 sudo docker compose exec backend python3 manage.py migrate
 ```
 2) Заполнение базы данных
 
     - Список ингредиентов:
-    ``` BASH
+    ```BASH
     sudo docker compose exec backend python3 manage.py load_ingredients
     ```
 
 3) Соберите статические файлы backend'а и скопируйте их в директорию `/collected_static/statis/`
-``` BASH
+```bash
 sudo docker compose exec backend python3 manage.py collectstatic
 ```
-``` BASH
+```bash
 sudo docker compose exec backend cp -r static/. /collected_static/static/
 ```
 ---
 Проект успешно запущен, чтобы попасть на сайт, нужно перейти по ссылке [http://localhost/](http://localhost/)
+Админ зона: [http://localhost/admin/](http://localhost/admin/)
+Документация API сервера: [http://localhost/api/docs/](http://localhost/api/docs/)

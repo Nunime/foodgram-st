@@ -18,12 +18,11 @@ from django.contrib import admin
 from django.urls import path, include
 from . import settings
 from debug_toolbar.toolbar import debug_toolbar_urls
-from api.views import RecipeViewSet
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),
-    path('s/<slug:s_id>/', RecipeViewSet.redirect_to_recipe)
+    path('', include('recipes.urls'))
 ]
 
 if settings.DEBUG:

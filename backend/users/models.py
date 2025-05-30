@@ -6,48 +6,34 @@ from django.contrib.auth.models import AbstractUser, UserManager
 from . import constants
 
 
-class CustomUserManager(UserManager):
-    def create_user(self, email, password=None, **extra_fields):
-        email = self.normalize_email(email=email)
-        user = self.model(email=email, **extra_fields)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, email, password=None, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        return self.create_user(email, password, **extra_fields)
-
-
 class CustomUser(AbstractUser):
     email = models.EmailField(
         unique=True,
         max_length=constants.EMAIL_MAX_LENGTH,
-        verbose_name='Email'
+        verbose_name='Электронная почта'
     )
     username = models.CharField(
         unique=True,
         max_length=constants.USERNAME_MAX_LENGTH,
-        verbose_name='Username',
+        verbose_name='Логин',
         validators=[RegexValidator(
             regex=r'^[\w.@+-]+$',
-            message='Username is not valid'
+            message='Некорректный логин'
         )]
     )
     first_name = models.CharField(
         max_length=constants.FIRST_AND_LAST_NAMES_MAX_LENGTH,
-        verbose_name='First name'
+        verbose_name='Имя'
     )
     last_name = models.CharField(
         max_length=constants.FIRST_AND_LAST_NAMES_MAX_LENGTH,
-        verbose_name='Last name'
+        verbose_name='Фамилия'
     )
     avatar = models.ImageField(
         upload_to='avatars/',
         blank=True,
         null=True,
-        verbose_name='Avatar'
+        verbose_name='Аватар'
     )
 
     USERNAME_FIELD = 'email'
@@ -55,7 +41,10 @@ class CustomUser(AbstractUser):
 
     EMAIL_FIELD = 'email'
 
-    objects = CustomUserManager()
+    class Meta:
+        ordering = ['username']
+        verbose_name = 'Пользователь'
+        verbose_name_plural = 'Пользователи'
 
     def __str__(self):
         return self.username
@@ -74,8 +63,9 @@ class Subscriptions(models.Model):
     )
 
     class Meta:
-        verbose_name = 'Subscription'
-        verbose_name_plural = 'Subscriptions'
+        verbose_name = 'Подписка'
+        verbose_name_plural = 'Подписки'
+        ordering = ['-id']
         constraints = [
             models.UniqueConstraint(
                 fields=['user', 'subscribe'],
@@ -88,4 +78,4 @@ class Subscriptions(models.Model):
         ]
 
     def __str__(self):
-        return self.user.username
+        return f'{self.user.username} -> {self.subscribe.username}'
