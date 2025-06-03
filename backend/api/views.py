@@ -6,12 +6,11 @@ from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.permissions import (IsAuthenticated,
                                         IsAuthenticatedOrReadOnly)
-from django.http import FileResponse
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum
 from rest_framework import serializers
 from django.urls import reverse
-from io import StringIO
 
 from recipes.models import (Ingredient, Recipe, RecipeIngredient,
                             ShoppingCart, FavoriteRecipes)
@@ -80,12 +79,12 @@ class CustomUserViewSet(UserViewSet):
         user = request.user
         sub_user = self.get_object()
 
-        if user == sub_user:
-            raise serializers.ValidationError(
-                'Нельзя подписаться на самого себя'
-            )
-
         if request.method == 'POST':
+            if user == sub_user:
+                raise serializers.ValidationError(
+                    'Нельзя подписаться на самого себя'
+                )
+
             subscription, created = Subscriptions.objects.get_or_create(
                 user=user,
                 subscribe=sub_user
@@ -93,7 +92,7 @@ class CustomUserViewSet(UserViewSet):
 
             if not created:
                 raise serializers.ValidationError(
-                    'Вы уже подписаны на этого пользователя'
+                    f'Вы уже подписаны на пользователя {sub_user.username}'
                 )
 
             serializer = SubscriptionsUserSerializer(
@@ -104,14 +103,11 @@ class CustomUserViewSet(UserViewSet):
                 status=status.HTTP_201_CREATED
             )
 
-        subscription = user.subscriptions.filter(
+        get_object_or_404(
+            Subscriptions,
+            user=user,
             subscribe=sub_user
-        ).first()
-        if not subscription:
-            raise serializers.ValidationError(
-                'Вы не подписаны на этого пользователя'
-            )
-        subscription.delete()
+        ).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -134,16 +130,10 @@ class RecipeViewSet(viewsets.ModelViewSet):
             return RecipeReadSerializer
         return RecipeWriteSerializer
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        if self.action in ['create', 'partial_update']:
-            context['read_serializer'] = RecipeReadSerializer
-        return context
-
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
-    def _handle_m2m_action(self, request, model, error_message):
+    def _handle_m2m_action(self, request, model):
         user = request.user
         recipe = self.get_object()
 
@@ -154,7 +144,9 @@ class RecipeViewSet(viewsets.ModelViewSet):
             )
 
             if not created:
-                raise serializers.ValidationError(error_message)
+                raise serializers.ValidationError(
+                    f'{model._meta.verbose_name} уже существует'
+                )
 
             serializer = ShortRecipesSerializer(recipe)
             return Response(
@@ -177,8 +169,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
     def shopping_cart(self, request, pk=None):
         return self._handle_m2m_action(
             request,
-            ShoppingCart,
-            'Рецепт уже добавлен в список покупок'
+            ShoppingCart
         )
 
     @action(
@@ -200,9 +191,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
             'ingredient__measurement_unit'
         ).annotate(total_amount=Sum('amount')).order_by('ingredient__name')
 
-        recipes = shopping_cart.values_list(
-            'recipe__name', 'recipe__author__username'
-        )
+        recipes = shopping_cart.all()
 
         current_date = datetime.now().strftime('%d.%m.%Y')
         
@@ -212,24 +201,20 @@ class RecipeViewSet(viewsets.ModelViewSet):
             '',
             'Продукты к покупке:',
             *[
-                f'{i + 1}. {item["ingredient__name"].capitalize()} - '
+                f'{i}. {item["ingredient__name"].capitalize()} - '
                 f'{item["total_amount"]} {item["ingredient__measurement_unit"]}'
-                for i, item in enumerate(ingredients)
+                for i, item in enumerate(ingredients, start=1)
             ],
             '',
             'Продукты для рецептов:',
             *[
-                f'- {name} (автор: {author})'
-                for name, author in recipes
+                f'- {recipe.recipe.name} (автор: {recipe.recipe.author.username})'
+                for recipe in recipes
             ]
         ])
 
-        buffer = StringIO()
-        buffer.write(shopping_list)
-        buffer.seek(0)
-        
         return FileResponse(
-            buffer,
+            shopping_list,
             as_attachment=True,
             filename='shopping_list.txt'
         )
@@ -242,8 +227,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
     def favorite(self, request, pk=None):
         return self._handle_m2m_action(
             request,
-            FavoriteRecipes,
-            'Рецепт уже добавлен в избранное'
+            FavoriteRecipes
         )
 
     @action(
@@ -252,8 +236,10 @@ class RecipeViewSet(viewsets.ModelViewSet):
         url_path=('get-link')
     )
     def get_short_link(self, request, pk=None):
-        recipe = self.get_object()
-        relative_url = reverse('recipe-redirect', kwargs={'recipe_id': recipe.id})
+        if not Recipe.objects.filter(id=pk).exists():
+            raise Http404('Рецепт не найден')
+            
+        relative_url = reverse('recipe-redirect', kwargs={'recipe_id': pk})
         full_path = request.build_absolute_uri(relative_url)
 
         data = {

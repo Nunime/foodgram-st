@@ -8,15 +8,17 @@ class CookingTimeFilter(admin.SimpleListFilter):
     parameter_name = 'cooking_time'
 
     def lookups(self, request, model_admin):
+        distinct_cooking_times = Recipe.objects.values('cooking_time').distinct().count()
+
+        if distinct_cooking_times < 3:
+            return ()
+
         min_recipe = Recipe.objects.order_by('cooking_time').first()
         max_recipe = Recipe.objects.order_by('-cooking_time').first()
 
-        if not min_recipe or not max_recipe or min_recipe == max_recipe:
-            return ()
-
         self.min_cooking_time = min_recipe.cooking_time
         self.max_cooking_time = max_recipe.cooking_time
-        self.median_cooking_time = (self.min_cooking_time + self.max_cooking_time) / 2
+        self.median_cooking_time = (self.min_cooking_time + self.max_cooking_time) // 2
 
         return (
             ('fast', f'Быстрые (< {self.median_cooking_time} мин)'),
@@ -25,9 +27,6 @@ class CookingTimeFilter(admin.SimpleListFilter):
         )
 
     def queryset(self, request, queryset):
-        if not hasattr(self, 'median_cooking_time'):
-            return queryset
-
         if self.value() == 'fast':
             return queryset.filter(cooking_time__lt=self.median_cooking_time)
         elif self.value() == 'medium':
@@ -45,7 +44,7 @@ class IngredientAdmin(admin.ModelAdmin):
 
     @admin.display(description='Рецептов')
     def get_recipes_count(self, obj):
-        return obj.ingredient_recipes.count()
+        return obj.recipe_ingredients.count()
     search_fields = ['name', 'measurement_unit']
     list_filter = ['measurement_unit']
 

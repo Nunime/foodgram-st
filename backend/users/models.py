@@ -18,7 +18,6 @@ class CustomUser(AbstractUser):
         verbose_name='Логин',
         validators=[RegexValidator(
             regex=r'^[\w.@+-]+$',
-            message='Некорректный логин'
         )]
     )
     first_name = models.CharField(
@@ -38,8 +37,6 @@ class CustomUser(AbstractUser):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ('username', 'first_name', 'last_name')
-
-    EMAIL_FIELD = 'email'
 
     class Meta:
         ordering = ['username']

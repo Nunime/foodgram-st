@@ -40,7 +40,6 @@ class CustomUserAdmin(admin.ModelAdmin):
         'get_subscriptions_count',
         'get_subscribers_count'
     ]
-    filter_horizontal = ['groups']
 
     @admin.display(description='ФИО')
     def get_full_name(self, obj):

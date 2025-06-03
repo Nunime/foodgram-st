@@ -17,14 +17,10 @@ class StrictBase64ImageField(Base64ImageField):
 
 
 class ShortRecipesSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(read_only=True)
-    name = serializers.CharField(read_only=True)
-    image = serializers.ImageField(read_only=True)
-    cooking_time = serializers.IntegerField(read_only=True)
-
     class Meta:
         model = Recipe
         fields = ('id', 'name', 'image', 'cooking_time')
+        read_only_fields = fields
 
 
 class UserSerializer(DjoserUserSerializer):
@@ -39,9 +35,7 @@ class UserSerializer(DjoserUserSerializer):
 
     def get_is_subscribed(self, obj):
         user = self.context.get('request').user
-        if user.is_authenticated:
-            return user.subscriptions.filter(id=obj.id).exists()
-        return False
+        return user.is_authenticated and user.subscriptions.filter(id=obj.id).exists()
 
 
 class SubscriptionsUserSerializer(UserSerializer):
@@ -78,20 +72,14 @@ class IngredientSerializer(serializers.ModelSerializer):
 
 
 class RecipeIngredientReadSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(source='ingredient.id', read_only=True)
-    name = serializers.CharField(
-        source='ingredient.name',
-        read_only=True
-    )
-    measurement_unit = serializers.CharField(
-        source='ingredient.measurement_unit',
-        read_only=True
-    )
-    amount = serializers.IntegerField(read_only=True)
+    id = serializers.IntegerField(source='ingredient.id')
+    name = serializers.CharField(source='ingredient.name')
+    measurement_unit = serializers.CharField(source='ingredient.measurement_unit')
 
     class Meta:
         model = RecipeIngredient
         fields = ['id', 'name', 'measurement_unit', 'amount']
+        read_only_fields = fields
 
 
 class RecipeIngredientWriteSerializer(serializers.ModelSerializer):
@@ -100,7 +88,6 @@ class RecipeIngredientWriteSerializer(serializers.ModelSerializer):
     )
     amount = serializers.IntegerField(
         min_value=1,
-        error_messages={'min_value': 'Количество ингредиента должно быть больше 0'}
     )
 
     class Meta:
@@ -109,17 +96,11 @@ class RecipeIngredientWriteSerializer(serializers.ModelSerializer):
 
 
 class RecipeReadSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(read_only=True)
-    name = serializers.CharField(read_only=True)
-    text = serializers.CharField(read_only=True)
-    cooking_time = serializers.IntegerField(read_only=True)
-    image = serializers.ImageField(read_only=True)
-    is_favorited = serializers.SerializerMethodField(read_only=True)
-    is_in_shopping_cart = serializers.SerializerMethodField(read_only=True)
-    author = UserSerializer(read_only=True)
+    is_favorited = serializers.SerializerMethodField()
+    is_in_shopping_cart = serializers.SerializerMethodField()
+    author = UserSerializer()
     ingredients = RecipeIngredientReadSerializer(
         many=True,
-        read_only=True
     )
 
     class Meta:
@@ -135,18 +116,15 @@ class RecipeReadSerializer(serializers.ModelSerializer):
             'text',
             'cooking_time'
         ]
+        read_only_fields = fields
 
     def get_is_favorited(self, obj):
         request = self.context.get('request')
-        if not request.user.is_authenticated:
-            return False
-        return obj.favorites.filter(user=request.user).exists()
+        return request.user.is_authenticated and obj.favorites.filter(user=request.user).exists()
 
     def get_is_in_shopping_cart(self, obj):
         request = self.context.get('request')
-        if not request.user.is_authenticated:
-            return False
-        return obj.shopping_carts.filter(user=request.user).exists()
+        return request.user.is_authenticated and obj.shopping_carts.filter(user=request.user).exists()
 
 
 class RecipeWriteSerializer(serializers.ModelSerializer):
@@ -154,7 +132,6 @@ class RecipeWriteSerializer(serializers.ModelSerializer):
     image = StrictBase64ImageField()
     cooking_time = serializers.IntegerField(
         min_value=1,
-        error_messages={'min_value': 'Время приготовления должно быть больше 0'}
     )
 
     class Meta:
@@ -169,7 +146,7 @@ class RecipeWriteSerializer(serializers.ModelSerializer):
 
     def validate_ingredients(self, value):
         if not value:
-            raise serializers.ValidationError('Ingredients list cannot be empty.')
+            raise serializers.ValidationError('Список ингредиентов не может быть пустым.')
 
         ingredients = [item['id'] for item in value]
         if len(ingredients) != len(set(ingredients)):
@@ -180,15 +157,12 @@ class RecipeWriteSerializer(serializers.ModelSerializer):
         return value
 
     def add_recipe_ingredients(self, instance, ingredients):
-        ingredients_links = [
+        RecipeIngredient.objects.bulk_create(
             RecipeIngredient(
                 recipe=instance,
                 ingredient=item['id'],
                 amount=item['amount']
-            ) for item in ingredients
-        ]
-
-        RecipeIngredient.objects.bulk_create(ingredients_links)
+            ) for item in ingredients)
 
     def create(self, validated_data):
         ingredients_data = validated_data.pop('ingredients')
@@ -203,10 +177,4 @@ class RecipeWriteSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
     def to_representation(self, instance):
-        read_serializer = self.context.get('read_serializer')
-        if read_serializer:
-            return read_serializer(
-                instance,
-                context=self.context
-            ).data
-        return super().to_representation(instance)
+        return RecipeReadSerializer(instance, context=self.context).data

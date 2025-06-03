@@ -28,7 +28,7 @@ class Ingredient(models.Model):
         ]
         verbose_name = 'Ингредиент'
         verbose_name_plural = 'Ингредиенты'
-        ordering = ("-name",)
+        ordering = ("name",)
 
     def __str__(self):
         return f"{self.name}, {self.measurement_unit}"
@@ -44,7 +44,7 @@ class Recipe(models.Model):
     )
     cooking_time = models.IntegerField(
         validators=(
-            MinValueValidator(constants.MIN_VALUE),
+            MinValueValidator(constants.MIN_COOKING_TIME),
         ),
         verbose_name='Время приготовления'
     )
@@ -62,7 +62,7 @@ class Recipe(models.Model):
     class Meta:
         verbose_name = 'Recipe'
         verbose_name_plural = 'Recipes'
-        ordering = ['-name']
+        ordering = ['name']
 
     def __str__(self):
         return self.name
@@ -72,18 +72,16 @@ class RecipeIngredient(models.Model):
     recipe = models.ForeignKey(
         Recipe,
         on_delete=models.CASCADE,
-        related_name='recipe_ingredients',
         verbose_name='Рецепт',
     )
     ingredient = models.ForeignKey(
         Ingredient,
         on_delete=models.CASCADE,
-        related_name='ingredient_recipes',
         verbose_name='Ингредиент',
     )
     amount = models.IntegerField(
         validators=(
-            MinValueValidator(constants.MIN_VALUE),
+            MinValueValidator(constants.MIN_AMOUNT),
         ),
         verbose_name='Количество'
     )
@@ -98,6 +96,7 @@ class RecipeIngredient(models.Model):
             )
         ]
         ordering = ("recipe__name",)
+        default_related_name = 'recipe_ingredients'
 
 
 class FavoriteRecipes(models.Model):
