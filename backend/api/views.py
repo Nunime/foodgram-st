@@ -145,7 +145,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
             if not created:
                 raise serializers.ValidationError(
-                    f'{model._meta.verbose_name} уже существует'
+                    f'{model._meta.verbose_name} уже добавлен'
                 )
 
             serializer = ShortRecipesSerializer(recipe)
@@ -237,7 +237,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
     )
     def get_short_link(self, request, pk=None):
         if not Recipe.objects.filter(id=pk).exists():
-            raise Http404('Рецепт не найден')
+            raise Http404(f'Рецепт с id={pk} не найден')
             
         relative_url = reverse('recipe-redirect', kwargs={'recipe_id': pk})
         full_path = request.build_absolute_uri(relative_url)
